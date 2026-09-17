@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Delf Teknoloji - Sipariş Sistemi</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; max-width: 600px; }
+    .kutu { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; }
+    input { display: block; margin-bottom: 8px; padding: 6px; width: 200px; }
+    button { cursor: pointer; padding: 6px 12px; }
+    .urun { margin-bottom: 10px; }
+    .siparis { border-bottom: 1px solid #eee; padding: 8px 0; }
+    #kullanici-bilgi { font-weight: bold; margin-bottom: 15px; }
+  </style>
+</head>
+<body>
+  <h1>Delf Teknoloji Sipariş Sistemi</h1>
+  <div id="kullanici-bilgi">Yükleniyor...</div>
+
+  <div id="giris-kutusu" class="kutu">
+    <h3>Giriş Yap / Kayıt Ol</h3>
+    <input type="text" id="giris-kullanici" placeholder="Kullanıcı adı">
+    <input type="password" id="giris-sifre" placeholder="Şifre">
+    <button onclick="girisYap()">Giriş Yap</button>
+    <button onclick="kayitOl()">Kayıt Ol</button>
+  </div>
+
+  <div id="ana-icerik" style="display:none;">
+    <button onclick="cikisYap()">Çıkış Yap</button>
+
+    <div class="kutu">
+      <h3>Ürünler</h3>
+      <div id="urun-listesi">Yükleniyor...</div>
+    </div>
+
+    <div class="kutu">
+      <h3>Siparişlerim</h3>
+      <div id="siparis-listesi">Yükleniyor...</div>
+    </div>
+  </div>
+
+  <script>
+    function girisDurumuKontrol() {
+      fetch('/api/ben')
+        .then(res => res.json())
+        .then(veri => {
+          if (veri.girisYapti) {
+            document.getElementById('kullanici-bilgi').innerText = `Hoş geldin, ${veri.kullaniciAdi}`;
+            document.getElementById('giris-kutusu').style.display = 'none';
+            document.getElementById('ana-icerik').style.display = 'block';
+            urunleriYukle();
+            siparisleriYukle();
+          } else {
+            document.getElementById('kullanici-bilgi').innerText = 'Giriş yapmadınız';
+            document.getElementById('giris-kutusu').style.display = 'block';
+            document.getElementById('ana-icerik').style.display = 'none';
+          }
+        });
+    }
+
+    function kayitOl() {
+      const kullanici_adi = document.getElementById('giris-kullanici').value;
+      const sifre = document.getElementById('giris-sifre').value;
+
+      fetch('/api/kayit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kullanici_adi, sifre })
+      })
+        .then(res => res.json())
+        .then(veri => {
+          alert(veri.mesaj || veri.hata);
+        });
+    }
+
+    function girisYap() {
+      const kullanici_adi = document.getElementById('giris-kullanici').value;
+      const sifre = document.getElementById('giris-sifre').value;
+
+      fetch('/api/giris', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kullanici_adi, sifre })
+      })
+        .then(res => res.json())
+        .then(veri => {
+          if (veri.hata) {
+            alert(veri.hata);
+          } else {
+            girisDurumuKontrol();
+          }
+        });
+    }
+
+    function cikisYap() {
+      fetch('/api/cikis', { method: 'POST' })
+        .then(() => girisDurumuKontrol());
+    }
+
+    function urunleriYukle() {
+      fetch('/api/urunler')
+        .then(res => res.json())
+        .then(urunler => {
+          const liste = document.getElementById('urun-listesi');
+          liste.innerHTML = urunler.map(u => `
+            <div class="urun">
+              ${u.ad} - ${u.fiyat}₺ - Stok: ${u.stok}
+              <button onclick="siparisVer(${u.id})" ${u.stok <= 0 ? 'disabled' : ''}>Sipariş Ver</button>
+            </div>
+          `).join('');
+        });
+    }
+
+    function siparisVer(urunId) {
+      fetch('/api/siparis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urunId })
+      })
+        .then(res => res.json())
+        .then(veri => {
+          alert(veri.mesaj || veri.hata);
+          urunleriYukle();
+          siparisleriYukle();
+        });
+    }
+
+    function siparisleriYukle() {
+      fetch('/api/siparislerim')
+        .then(res => res.json())
+        .then(siparisler => {
+          const liste = document.getElementById('siparis-listesi');
+          if (siparisler.length === 0) {
+            liste.innerHTML = 'Henüz siparişiniz yok';
+            return;
+          }
+          liste.innerHTML = siparisler.map(s => `
+            <div class="siparis">
+              #${s.id} - ${s.ad} - ${s.fiyat}₺
+              - Durum: <strong>${s.durum}</strong>
+            </div>
+          `).join('');
+        });
+    }
+
+    girisDurumuKontrol();
+  </script>
+</body>
+</html>
+

@@ -162,7 +162,17 @@ app.post('/api/siparis/:id/durum', (req, res) => {
   db.prepare('UPDATE siparisler SET durum = ? WHERE id = ?').run(durum, id);
   res.json({ mesaj: 'Durum güncellendi' });
 });
+// Kullanıcının sepetini/siparişlerini temizle
+app.delete('/api/siparisler', (req, res) => {
+    if (!req.session.kullaniciId) {
+        return res.status(401).json({ hata: 'Giriş yapmalısınız' });
+    }
 
+    const sil = db.prepare('DELETE FROM siparisler WHERE kullanici_id = ?');
+    sil.run(req.session.kullaniciId);
+
+    res.json({ mesaj: 'Sepet başarıyla temizlendi' });
+});
 app.listen(PORT, () => {
   console.log(`Sunucu çalışıyor: http://localhost:${PORT}`);
 });

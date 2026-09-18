@@ -1,156 +1,190 @@
 const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
 const app = express();
 
 // Form verilerini okumak için gerekli
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Ürün Listesi
-let urunler = [
-    { ad: "Samsung Galaxy A32", fiyat: 9499, stok: 5 },
-    { ad: "Buzdolabı X200", fiyat: 24999, stok: 2 },
-    { ad: "Çamaşır Makinesi Z50", fiyat: 12999, stok: 0 },
-    { ad: "Bulaşık Makinesi Pro", fiyat: 8999, stok: 8 }
-];
-
-// Sipariş Listesi
-let siparisler = [
-    { id: 2, urun: "Samsung Galaxy A32", fiyat: 9499, durum: "Hazırlanıyor" },
-    { id: 1, urun: "Buzdolabı X200", fiyat: 24999, durum: "Kargoda" }
-];
-
-// Ana Sayfa Arayüzü
-app.get('/', (req, res) => {
-    let html = `
-    <!DOCTYPE html>
-    <html lang="tr">
-    <head>
-        <meta charset="UTF-8">
-        <title>Delf Teknoloji Sipariş Sistemi - Gelişmiş Panel</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f7f6; color: #333; }
-            h1 { font-size: 26px; color: #222; }
-            .container { display: flex; gap: 20px; flex-wrap: wrap; }
-            .box { background: #fff; border: 1px solid #ddd; padding: 20px; border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); flex: 1; min-width: 300px; margin-bottom: 20px; }
-            button { padding: 6px 12px; cursor: pointer; border-radius: 4px; border: none; font-weight: bold; }
-            .btn-danger { background-color: #dc3545; color: white; padding: 10px 15px; }
-            .btn-success { background-color: #28a745; color: white; padding: 10px 15px; width: 100%; }
-            .btn-primary { background-color: #007bff; color: white; }
-            .btn-warning { background-color: #ffc107; color: #333; font-size: 12px; }
-            ul { padding-left: 20px; list-style-type: none; }
-            li { margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
-            .disabled-btn { background-color: #e0e0e0; color: #888; cursor: not-allowed; }
-            input { padding: 8px; width: 100%; box-sizing: border-box; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
-            .badge-hazirlaniyor { color: #d97706; font-weight: bold; }
-            .badge-kargoda { color: #16a34a; font-weight: bold; }
-        </style>
-    </head>
-    <body>
-
-        <h1>Delf Teknoloji Sipariş ve Yönetim Sistemi</h1>
-        <p>Hoş geldin, <strong>sdas</strong> | <button onclick="alert('Çıkış yapıldı')" style="background:#6c757d; color:#fff;">Çıkış Yap</button></p>
-
-        <div class="container">
-            <!-- Ürünler Paneli -->
-            <div class="box">
-                <h3>Ürün Katalogu</h3>
-                ${urunler.map((u, index) => `
-                    <p style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:8px;">
-                        <span><strong>${u.ad}</strong><br>${u.fiyat}₺ (Stok: ${u.stok})</span>${u.stok > 0 ? `
-                            <form action="/siparis-ver" method="POST" style="margin:0;">
-                                <input type="hidden" name="urunIndex" value="${index}">
-                                <button type="submit" class="btn-primary">Sipariş Ver</button>
-                            </form>
-                        ` : `<button class="disabled-btn" disabled>Tükendi</button>`}
-                    </p>
-                `).join('')}
-            </div>
-
-            <!-- Yeni Ürün Ekleme Paneli (Admin) -->
-            <div class="box">
-                <h3>Yeni Ürün Ekle (Admin)</h3>
-                <form action="/urun-ekle" method="POST">
-                    <input type="text" name="urunAdi" placeholder="Ürün Adı (örn: Samsung A32)" required>
-                    <input type="number" name="fiyat" placeholder="Fiyat (TL)" required>
-                    <input type="number" name="stok" placeholder="Stok Adedi" required>
-                    <button type="submit" class="btn-success">Ürünü Sisteme Ekle</button>
-                </form>
-            </div>
-        </div>
-
-        <!-- Siparişler Yönetim Paneli -->
-        <div class="box">
-            <h3>Sipariş Yönetimi</h3>
-            <ul>
-                ${siparisler.length === '<p>Aktif sipariş bulunmuyor.</p>' ? '<p>Aktif sipariş bulunmuyor.</p>' : siparisler.map((s, sIndex) => `
-                    <li>
-                        <span>#${s.id} - <strong>${s.urun}</strong> (${s.fiyat}₺) <br>Durum: <span class="${s.durum === 'Kargoda' ? 'badge-kargoda' : 'badge-hazirlaniyor'}">${s.durum}</span></span>${s.durum === 'Hazırlanıyor' ? `
-                            <form action="/kargola" method="POST" style="margin:0;">
-                                <input type="hidden" name="siparisIndex" value="${sIndex}">
-                                <button type="submit" class="btn-warning">Kargoya Ver</button>
-                            </form>
-                        ` : '<span style="font-size:12px; color:gray;">Tamamlandı</span>'}
-                    </li>
-                `).join('')}
-            </ul>
-
-            <form action="/sepeti-temizle" method="POST" style="margin-top: 15px;">
-                <button type="submit" class="btn-danger">Tüm Siparişleri Temizle</button>
-            </form>
-        </div>
-
-    </body>
-    </html>
-    `;
-    res.send(html);
+// SQLite Veritabanı Dosyasını Oluştur ve Bağlan
+const db = new sqlite3.Database('./siparisler.db', (err) => {
+    if (err) {
+        console.error('Veritabanı bağlantı hatası:', err.message);
+    } else {
+        console.log('SQLite veritabanına başarıyla bağlanıldı.');
+    }
 });
 
-// Yeni Ürün Ekleme
+// Tabloları Otomatik Oluştur (Eğer yoksa)
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS urunler (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ad TEXT NOT NULL,
+        fiyat REAL NOT NULL,
+        stok INTEGER NOT NULL
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS siparislar (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        urun TEXT NOT NULL,
+        fiyat REAL NOT NULL,
+        durum TEXT NOT NULL
+    )`);
+
+    // İlk açılışta tablolar boşsa örnek ürünler ekleyelim
+    db.get("SELECT COUNT(*) as count FROM urunler", (err, row) => {
+        if (row.count === 0) {
+            db.run(`INSERT INTO urunler (ad, fiyat, stok) VALUES ('Samsung Galaxy A32', 9499, 5)`);
+            db.run(`INSERT INTO urunler (ad, fiyat, stok) VALUES ('Buzdolabı X200', 24999, 2)`);
+            db.run(`INSERT INTO urunler (ad, fiyat, stok) VALUES ('Çamaşır Makinesi Z50', 12999, 0)`);
+            db.run(`INSERT INTO urunler (ad, fiyat, stok) VALUES ('Bulaşık Makinesi Pro', 8999, 8)`);
+        }
+    });
+});
+
+// Ana Sayfa - Veritabanından Verileri Çekip Göster
+app.get('/', (req, res) => {
+    db.all("SELECT * FROM urunler", [], (err, urunler) => {
+        if (err) {
+            return res.status(500).send("Veritabanı hatası (Ürünler)");
+        }
+
+        db.all("SELECT * FROM siparislar ORDER BY id DESC", [], (err, siparisler) => {
+            if (err) {
+                return res.status(500).send("Veritabanı hatası (Siparişler)");
+            }
+
+            let html = `
+            <!DOCTYPE html>
+            <html lang="tr">
+            <head>
+                <meta charset="UTF-8">
+                <title>Delf Teknoloji - SQLite Veritabanlı Panel</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f7f6; color: #333; }
+                    h1 { font-size: 26px; color: #222; }
+                    .container { display: flex; gap: 20px; flex-wrap: wrap; }
+                    .box { background: #fff; border: 1px solid #ddd; padding: 20px; border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); flex: 1; min-width: 300px; margin-bottom: 20px; }
+                    button { padding: 6px 12px; cursor: pointer; border-radius: 4px; border: none; font-weight: bold; }
+                    .btn-danger { background-color: #dc3545; color: white; padding: 10px 15px; }
+                    .btn-success { background-color: #28a745; color: white; padding: 10px 15px; width: 100%; }
+                    .btn-primary { background-color: #007bff; color: white; }
+                    .btn-warning { background-color: #ffc107; color: #333; font-size: 12px; }
+                    ul { padding-left: 20px; list-style-type: none; }
+                    li { margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+                    .disabled-btn { background-color: #e0e0e0; color: #888; cursor: not-allowed; }
+                    input { padding: 8px; width: 100%; box-sizing: border-box; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+                    .badge-hazirlaniyor { color: #d97706; font-weight: bold; }
+                    .badge-kargoda { color: #16a34a; font-weight: bold; }
+                </style>
+            </head>
+            <body>
+
+                <h1>Delf Teknoloji Sipariş ve Yönetim Sistemi (SQLite)</h1>
+                <p>Hoş geldin, <strong>sdas</strong> | <button onclick="alert('Çıkış yapıldı')" style="background:#6c757d; color:#fff;">Çıkış Yap</button></p>
+
+                <div class="container">
+                    <!-- Ürünler Paneli -->
+                    <div class="box">
+                        <h3>Ürün Katalogu (Veritabanı)</h3>
+                        ${urunler.map((u) => `
+                            <p style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:8px;">
+                                <span><strong>${u.ad}</strong><br>${u.fiyat}₺ (Stok: ${u.stok})</span>${u.stok > 0 ? `
+                                    <form action="/siparis-ver" method="POST" style="margin:0;">
+                                        <input type="hidden" name="urunId" value="${u.id}">
+                                        <button type="submit" class="btn-primary">Sipariş Ver</button>
+                                    </form>
+                                ` : `<button class="disabled-btn" disabled>Tükendi</button>`}
+                            </p>
+                        `).join('')}
+                    </div>
+
+                    <!-- Yeni Ürün Ekleme Paneli (Admin) -->
+                    <div class="box">
+                        <h3>Yeni Ürün Ekle (Admin)</h3>
+                        <form action="/urun-ekle" method="POST">
+                            <input type="text" name="urunAdi" placeholder="Ürün Adı (örn: Kulaklık)" required>
+                            <input type="number" name="fiyat" placeholder="Fiyat (TL)" required>
+                            <input type="number" name="stok" placeholder="Stok Adedi" required>
+                            <button type="submit" class="btn-success">Ürünü Sisteme Ekle</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Siparişler Yönetim Paneli -->
+                <div class="box">
+                    <h3>Sipariş Yönetimi</h3>
+                    <ul>
+                        ${siparisler.length === 0 ? '<p>Aktif sipariş bulunmuyor.</p>' : siparisler.map((s) => `
+                            <li>
+                                <span>#${s.id} - <strong>${s.urun}</strong> (${s.fiyat}₺) <br>Durum: <span class="${s.durum === 'Kargoda' ? 'badge-kargoda' : 'badge-hazirlaniyor'}">${s.durum}</span></span>${s.durum === 'Hazırlanıyor' ? `
+                                    <form action="/kargola" method="POST" style="margin:0;">
+                                        <input type="hidden" name="siparisId" value="${s.id}">
+                                        <button type="submit" class="btn-warning">Kargoya Ver</button>
+                                    </form>
+                                ` : '<span style="font-size:12px; color:gray;">Tamamlandı</span>'}
+                            </li>
+                        `).join('')}
+                    </ul>
+
+                    <form action="/sepeti-temizle" method="POST" style="margin-top: 15px;">
+                        <button type="submit" class="btn-danger">Tüm Siparişleri Temizle</button>
+                    </form>
+                </div>
+
+            </body>
+            </html>
+            `;
+            res.send(html);
+        });
+    });
+});
+
+// Yeni Ürün Ekleme (DB)
 app.post('/urun-ekle', (req, res) => {
     const { urunAdi, fiyat, stok } = req.body;
     if (urunAdi && fiyat && stok) {
-        urunler.push({
-            ad: urunAdi,
-            fiyat: Number(fiyat),
-            stok: Number(stok)
+        db.run(`INSERT INTO urunler (ad, fiyat, stok) VALUES (?, ?, ?)`, [urunAdi, Number(fiyat), Number(stok)], (err) => {
+            if (err) console.error(err);
+            res.redirect('/');
         });
+    } else {
+        res.redirect('/');
     }
-    res.redirect('/');
 });
 
-// Sipariş Verme ve Stok Düşme
+// Sipariş Verme ve Stok Düşme (DB)
 app.post('/siparis-ver', (req, res) => {
-    const { urunIndex } = req.body;
-    const index = Number(urunIndex);
+    const { urunId } = req.body;
 
-    if (urunler[index] && urunler[index].stok > 0) {
-        urunler[index].stok -= 1; 
-
-        siparisler.unshift({
-            id: siparisler.length + 1,
-            urun: urunler[index].ad,
-            fiyat: urunler[index].fiyat,
-            durum: "Hazırlanıyor"
-        });
-    }
-    res.redirect('/');
+    db.get(`SELECT * FROM urunler WHERE id = ?`, [urunId], (err, urun) => {
+        if (urun && urun.stok > 0) {
+            // Stok 1 azalt
+            db.run(`UPDATE urunler SET stok = stok - 1 WHERE id = ?`, [urunId], () => {
+                // Siparişler tablosuna ekle
+                db.run(`INSERT INTO siparislar (urun, fiyat, durum) VALUES (?, ?, ?)`, [urun.ad, urun.fiyat, "Hazırlanıyor"], () => {
+                    res.redirect('/');
+                });
+            });
+        } else {
+            res.redirect('/');
+        }
+    });
 });
 
-// Siparişi Kargoya Ver (Durum Güncelleme)
+// Siparişi Kargoya Ver (DB)
 app.post('/kargola', (req, res) => {
-    const { siparisIndex } = req.body;
-    const index = Number(siparisIndex);
-
-    if (siparisler[index]) {
-        siparisler[index].durum = "Kargoda";
-    }
-    res.redirect('/');
+    const { siparisId } = req.body;
+    db.run(`UPDATE siparislar SET durum = 'Kargoda' WHERE id = ?`, [siparisId], () => {
+        res.redirect('/');
+    });
 });
 
-// Siparişleri Temizle
+// Siparişleri Temizle (DB)
 app.post('/sepeti-temizle', (req, res) => {
-    siparisler = [];
-    res.redirect('/');
+    db.run(`DELETE FROM siparislar`, () => {
+        res.redirect('/');
+    });
 });
 
 // Sunucuyu Başlat

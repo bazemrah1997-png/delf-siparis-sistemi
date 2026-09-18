@@ -162,3 +162,19 @@ async function sepetiTemizle() {
 <button onclick="sepetiTemizle()" style="background-color: #ff4d4d; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">Sepeti Temizle</button
 </body>
 </html>
+<!-- Yeni Ürün Ekleme Formu -->
+<div style="border: 1px solid #ccc; padding: 20px; margin-bottom: 20px; border-radius: 4px; background: #f9f9f9;">
+    <h3>Yeni Ürün Ekle</h3>
+    <form action="/urun-ekle" method="POST">
+        <div style="margin-bottom: 10px;">
+            <input type="text" name="urunAdi" placeholder="Ürün Adı (örn: Samsung A32)" required style="padding: 8px; width: 300px;">
+        </div>
+        <div style="margin-bottom: 10px;">
+            <input type="number" name="fiyat" placeholder="Fiyat (TL)" required style="padding: 8px; width: 300px;">
+        </div>
+        <div style="margin-bottom: 10px;">
+            <input type="number" name="stok" placeholder="Stok Adedi" required style="padding: 8px; width: 300px;">
+        </div>
+        <button type="submit" style="background-color: #28a745; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold;">Ürünü Sisteme Ekle</button>
+    </form>
+</div>

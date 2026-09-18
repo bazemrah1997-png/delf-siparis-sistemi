@@ -1,178 +1,159 @@
 const express = require('express');
-const session = require('express-session');
-const bcrypt = require('bcryptjs');
-const Database = require('better-sqlite3');
-const path = require('path');
-
 const app = express();
-const PORT = 3000;
 
-// Veritabanını aç (dosya yoksa otomatik oluşturur)
-const db = new Database('siparisler.db');
-
-// Tabloları oluştur (sadece ilk çalıştırmada gerçek etkisi olur)
-db.exec(`
-  CREATE TABLE IF NOT EXISTS kullanicilar (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kullanici_adi TEXT UNIQUE NOT NULL,
-    sifre_hash TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS urunler (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ad TEXT NOT NULL,
-    fiyat REAL NOT NULL,
-    stok INTEGER DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS siparisler (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kullanici_id INTEGER,
-    urun_id INTEGER,
-    durum TEXT DEFAULT 'Hazırlanıyor',
-    tarih TEXT DEFAULT CURRENT_TIMESTAMP
-  );
-`);
-
-// Başlangıç ürünleri - tablo boşsa ekle
-const urunSayisi = db.prepare('SELECT COUNT(*) as adet FROM urunler').get();
-if (urunSayisi.adet === 0) {
-  const ekle = db.prepare('INSERT INTO urunler (ad, fiyat, stok) VALUES (?, ?, ?)');
-  ekle.run('Buzdolabı X200', 24999, 5);
-  ekle.run('Çamaşır Makinesi Z50', 12999, 0);
-  ekle.run('Bulaşık Makinesi Pro', 8999, 12);
-}
-
+// Form verilerini okumak için gerekli
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(express.static('public'));
-app.use(session({
-  secret: 'delf-egitim-gizli-anahtar',
-  resave: false,
-  saveUninitialized: false
-}));
-// Kayıt ol
-app.post('/api/kayit', async (req, res) => {
-  const { kullanici_adi, sifre } = req.body;
 
-  if (!kullanici_adi || !sifre) {
-    return res.status(400).json({ hata: 'Kullanıcı adı ve şifre zorunlu' });
-  }
+// Ürün Listesi
+let urunler = [
+    { ad: "Samsung Galaxy A32", fiyat: 9499, stok: 5 },
+    { ad: "Buzdolabı X200", fiyat: 24999, stok: 2 },
+    { ad: "Çamaşır Makinesi Z50", fiyat: 12999, stok: 0 },
+    { ad: "Bulaşık Makinesi Pro", fiyat: 8999, stok: 8 }
+];
 
-  const sifreHash = await bcrypt.hash(sifre, 10);
+// Sipariş Listesi
+let siparisler = [
+    { id: 2, urun: "Samsung Galaxy A32", fiyat: 9499, durum: "Hazırlanıyor" },
+    { id: 1, urun: "Buzdolabı X200", fiyat: 24999, durum: "Kargoda" }
+];
 
-  try {
-    const ekle = db.prepare('INSERT INTO kullanicilar (kullanici_adi, sifre_hash) VALUES (?, ?)');
-    ekle.run(kullanici_adi, sifreHash);
-    res.status(201).json({ mesaj: 'Kayıt başarılı' });
-  } catch (err) {
-    res.status(400).json({ hata: 'Bu kullanıcı adı zaten alınmış' });
-  }
+// Ana Sayfa Arayüzü
+app.get('/', (req, res) => {
+    let html = `
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+        <meta charset="UTF-8">
+        <title>Delf Teknoloji Sipariş Sistemi - Gelişmiş Panel</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f7f6; color: #333; }
+            h1 { font-size: 26px; color: #222; }
+            .container { display: flex; gap: 20px; flex-wrap: wrap; }
+            .box { background: #fff; border: 1px solid #ddd; padding: 20px; border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); flex: 1; min-width: 300px; margin-bottom: 20px; }
+            button { padding: 6px 12px; cursor: pointer; border-radius: 4px; border: none; font-weight: bold; }
+            .btn-danger { background-color: #dc3545; color: white; padding: 10px 15px; }
+            .btn-success { background-color: #28a745; color: white; padding: 10px 15px; width: 100%; }
+            .btn-primary { background-color: #007bff; color: white; }
+            .btn-warning { background-color: #ffc107; color: #333; font-size: 12px; }
+            ul { padding-left: 20px; list-style-type: none; }
+            li { margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+            .disabled-btn { background-color: #e0e0e0; color: #888; cursor: not-allowed; }
+            input { padding: 8px; width: 100%; box-sizing: border-box; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+            .badge-hazirlaniyor { color: #d97706; font-weight: bold; }
+            .badge-kargoda { color: #16a34a; font-weight: bold; }
+        </style>
+    </head>
+    <body>
+
+        <h1>Delf Teknoloji Sipariş ve Yönetim Sistemi</h1>
+        <p>Hoş geldin, <strong>sdas</strong> | <button onclick="alert('Çıkış yapıldı')" style="background:#6c757d; color:#fff;">Çıkış Yap</button></p>
+
+        <div class="container">
+            <!-- Ürünler Paneli -->
+            <div class="box">
+                <h3>Ürün Katalogu</h3>
+                ${urunler.map((u, index) => `
+                    <p style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:8px;">
+                        <span><strong>${u.ad}</strong><br>${u.fiyat}₺ (Stok: ${u.stok})</span>${u.stok > 0 ? `
+                            <form action="/siparis-ver" method="POST" style="margin:0;">
+                                <input type="hidden" name="urunIndex" value="${index}">
+                                <button type="submit" class="btn-primary">Sipariş Ver</button>
+                            </form>
+                        ` : `<button class="disabled-btn" disabled>Tükendi</button>`}
+                    </p>
+                `).join('')}
+            </div>
+
+            <!-- Yeni Ürün Ekleme Paneli (Admin) -->
+            <div class="box">
+                <h3>Yeni Ürün Ekle (Admin)</h3>
+                <form action="/urun-ekle" method="POST">
+                    <input type="text" name="urunAdi" placeholder="Ürün Adı (örn: Samsung A32)" required>
+                    <input type="number" name="fiyat" placeholder="Fiyat (TL)" required>
+                    <input type="number" name="stok" placeholder="Stok Adedi" required>
+                    <button type="submit" class="btn-success">Ürünü Sisteme Ekle</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Siparişler Yönetim Paneli -->
+        <div class="box">
+            <h3>Sipariş Yönetimi</h3>
+            <ul>
+                ${siparisler.length === '<p>Aktif sipariş bulunmuyor.</p>' ? '<p>Aktif sipariş bulunmuyor.</p>' : siparisler.map((s, sIndex) => `
+                    <li>
+                        <span>#${s.id} - <strong>${s.urun}</strong> (${s.fiyat}₺) <br>Durum: <span class="${s.durum === 'Kargoda' ? 'badge-kargoda' : 'badge-hazirlaniyor'}">${s.durum}</span></span>${s.durum === 'Hazırlanıyor' ? `
+                            <form action="/kargola" method="POST" style="margin:0;">
+                                <input type="hidden" name="siparisIndex" value="${sIndex}">
+                                <button type="submit" class="btn-warning">Kargoya Ver</button>
+                            </form>
+                        ` : '<span style="font-size:12px; color:gray;">Tamamlandı</span>'}
+                    </li>
+                `).join('')}
+            </ul>
+
+            <form action="/sepeti-temizle" method="POST" style="margin-top: 15px;">
+                <button type="submit" class="btn-danger">Tüm Siparişleri Temizle</button>
+            </form>
+        </div>
+
+    </body>
+    </html>
+    `;
+    res.send(html);
 });
 
-// Giriş yap
-app.post('/api/giris', async (req, res) => {
-  const { kullanici_adi, sifre } = req.body;
-
-  const kullanici = db.prepare('SELECT * FROM kullanicilar WHERE kullanici_adi = ?').get(kullanici_adi);
-
-  if (!kullanici) {
-    return res.status(401).json({ hata: 'Kullanıcı bulunamadı' });
-  }
-
-  const sifreDogruMu = await bcrypt.compare(sifre, kullanici.sifre_hash);
-
-  if (!sifreDogruMu) {
-    return res.status(401).json({ hata: 'Şifre yanlış' });
-  }
-
-  req.session.kullaniciId = kullanici.id;
-  req.session.kullaniciAdi = kullanici.kullanici_adi;
-
-  res.json({ mesaj: 'Giriş başarılı', kullanici: kullanici.kullanici_adi });
-});
-
-// Çıkış yap
-app.post('/api/cikis', (req, res) => {
-  req.session.destroy();
-  res.json({ mesaj: 'Çıkış yapıldı' });
-});
-
-// Şu an giriş yapmış kullanıcıyı kontrol et
-app.get('/api/ben', (req, res) => {
-  if (req.session.kullaniciId) {
-    res.json({ girisYapti: true, kullaniciAdi: req.session.kullaniciAdi });
-  } else {
-    res.json({ girisYapti: false });
-  }
-});
-// Ürünleri listele
-app.get('/api/urunler', (req, res) => {
-  const urunler = db.prepare('SELECT * FROM urunler').all();
-  res.json(urunler);
-});
-
-// Sipariş oluştur (giriş yapmış olmak şart)
-app.post('/api/siparis', (req, res) => {
-  if (!req.session.kullaniciId) {
-    return res.status(401).json({ hata: 'Sipariş vermek için giriş yapmalısınız' });
-  }
-
-  const { urunId } = req.body;
-  const urun = db.prepare('SELECT * FROM urunler WHERE id = ?').get(urunId);
-
-  if (!urun) {
-    return res.status(404).json({ hata: 'Ürün bulunamadı' });
-  }
-  if (urun.stok <= 0) {
-    return res.status(400).json({ hata: 'Ürün stokta yok' });
-  }
-
-  // Sipariş oluştur
-  const siparisEkle = db.prepare('INSERT INTO siparisler (kullanici_id, urun_id, durum) VALUES (?, ?, ?)');
-  const sonuc = siparisEkle.run(req.session.kullaniciId, urunId, 'Hazırlanıyor');
-
-  // Stoğu düşür
-  db.prepare('UPDATE urunler SET stok = stok - 1 WHERE id = ?').run(urunId);
-
-  res.status(201).json({ mesaj: 'Sipariş oluşturuldu', siparisId: sonuc.lastInsertRowid });
-});
-
-// Kendi siparişlerimi listele
-app.get('/api/siparislerim', (req, res) => {
-  if (!req.session.kullaniciId) {
-    return res.status(401).json({ hata: 'Giriş yapmalısınız' });
-  }
-
-  const siparisler = db.prepare(`
-    SELECT siparisler.id, siparisler.durum, siparisler.tarih, urunler.ad, urunler.fiyat
-    FROM siparisler
-    JOIN urunler ON siparisler.urun_id = urunler.id
-    WHERE siparisler.kullanici_id = ?
-    ORDER BY siparisler.tarih DESC
-  `).all(req.session.kullaniciId);
-
-  res.json(siparisler);
-});
-
-// Sipariş durumunu güncelle (normalde sadece yönetici yapar - şimdilik herkes yapabilsin, eğitim amaçlı)
-app.post('/api/siparis/:id/durum', (req, res) => {
-  const { durum } = req.body;
-  const { id } = req.params;
-
-  db.prepare('UPDATE siparisler SET durum = ? WHERE id = ?').run(durum, id);
-  res.json({ mesaj: 'Durum güncellendi' });
-});
-// Kullanıcının sepetini/siparişlerini temizle
-app.delete('/api/siparisler', (req, res) => {
-    if (!req.session.kullaniciId) {
-        return res.status(401).json({ hata: 'Giriş yapmalısınız' });
+// Yeni Ürün Ekleme
+app.post('/urun-ekle', (req, res) => {
+    const { urunAdi, fiyat, stok } = req.body;
+    if (urunAdi && fiyat && stok) {
+        urunler.push({
+            ad: urunAdi,
+            fiyat: Number(fiyat),
+            stok: Number(stok)
+        });
     }
-
-    const sil = db.prepare('DELETE FROM siparisler WHERE kullanici_id = ?');
-    sil.run(req.session.kullaniciId);
-
-    res.json({ mesaj: 'Sepet başarıyla temizlendi' });
+    res.redirect('/');
 });
-app.listen(PORT, () => {
-  console.log(`Sunucu çalışıyor: http://localhost:${PORT}`);
+
+// Sipariş Verme ve Stok Düşme
+app.post('/siparis-ver', (req, res) => {
+    const { urunIndex } = req.body;
+    const index = Number(urunIndex);
+
+    if (urunler[index] && urunler[index].stok > 0) {
+        urunler[index].stok -= 1; 
+
+        siparisler.unshift({
+            id: siparisler.length + 1,
+            urun: urunler[index].ad,
+            fiyat: urunler[index].fiyat,
+            durum: "Hazırlanıyor"
+        });
+    }
+    res.redirect('/');
+});
+
+// Siparişi Kargoya Ver (Durum Güncelleme)
+app.post('/kargola', (req, res) => {
+    const { siparisIndex } = req.body;
+    const index = Number(siparisIndex);
+
+    if (siparisler[index]) {
+        siparisler[index].durum = "Kargoda";
+    }
+    res.redirect('/');
+});
+
+// Siparişleri Temizle
+app.post('/sepeti-temizle', (req, res) => {
+    siparisler = [];
+    res.redirect('/');
+});
+
+// Sunucuyu Başlat
+app.listen(3000, () => {
+    console.log("Sunucu çalışıyor: http://localhost:3000");
 });

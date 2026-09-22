@@ -1,11 +1,16 @@
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const app = express();
-
+const bcrypt = require('bcryptjs');
+const session = require('express-session');
 // Form verilerini okumak için gerekli
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-
+app.use(session({
+    secret: 'delf-egitim-gizli-anahtar',
+    resave: false,
+    saveUninitialized: false
+}));
 // SQLite Veritabanı Dosyasını Oluştur ve Bağlan
 const db = new sqlite3.Database('./siparisler.db', (err) => {
     if (err) {
@@ -16,7 +21,11 @@ const db = new sqlite3.Database('./siparisler.db', (err) => {
 });
 
 // Tabloları Otomatik Oluştur (Eğer yoksa)
-db.serialize(() => {
+db.serialize(() => {    db.run(`CREATE TABLE IF NOT EXISTS kullanicilar (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kullanici_adi TEXT UNIQUE NOT NULL,
+        sifre_hash TEXT NOT NULL
+    )`);
     db.run(`CREATE TABLE IF NOT EXISTS urunler (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ad TEXT NOT NULL,
@@ -44,10 +53,10 @@ db.serialize(() => {
 
 // Ana Sayfa - Veritabanından Verileri Çekip Göster
 app.get('/', (req, res) => {
+    if (!req.session.kullaniciId) {
+        return res.redirect('/giris');
+    }
     db.all("SELECT * FROM urunler", [], (err, urunler) => {
-        if (err) {
-            return res.status(500).send("Veritabanı hatası (Ürünler)");
-        }
 
         db.all("SELECT * FROM siparislar ORDER BY id DESC", [], (err, siparisler) => {
             if (err) {
@@ -81,7 +90,10 @@ app.get('/', (req, res) => {
             <body>
 
                 <h1>Delf Teknoloji Sipariş ve Yönetim Sistemi (SQLite)</h1>
-                <p>Hoş geldin, <strong>sdas</strong> | <button onclick="alert('Çıkış yapıldı')" style="background:#6c757d; color:#fff;">Çıkış Yap</button></p>
+                <p>Hoş geldin, <strong>${req.session.kullaniciAdi}</strong> |
+<form action="/cikis" method="POST" style="display:inline;">
+    <button type="submit" style="background:#6c757d; color:#fff;">Çıkış Yap</button>
+</form></p>
 
                 <div class="container">
                     <!-- Ürünler Paneli -->
@@ -186,7 +198,78 @@ app.post('/sepeti-temizle', (req, res) => {
         res.redirect('/');
     });
 });
+// Kayıt Ol
+app.post('/kayit', (req, res) => {
+    const { kullanici_adi, sifre } = req.body;
+    if (!kullanici_adi || !sifre) {
+        return res.send('Kullanıcı adı ve şifre zorunlu. <a href="/giris">Geri dön</a>');
+    }
+    const sifreHash = bcrypt.hashSync(sifre, 10);
+    db.run(`INSERT INTO kullanicilar (kullanici_adi, sifre_hash) VALUES (?, ?)`, [kullanici_adi, sifreHash], (err) => {
+        if (err) {
+            return res.send('Bu kullanıcı adı zaten alınmış. <a href="/giris">Geri dön</a>');
+        }
+        res.redirect('/giris');
+    });
+});
 
+// Giriş Yap
+app.post('/giris-yap', (req, res) => {
+    const { kullanici_adi, sifre } = req.body;
+    db.get(`SELECT * FROM kullanicilar WHERE kullanici_adi = ?`, [kullanici_adi], (err, kullanici) => {
+        if (!kullanici || !bcrypt.compareSync(sifre, kullanici.sifre_hash)) {
+            return res.send('Kullanıcı adı veya şifre yanlış. <a href="/giris">Geri dön</a>');
+        }
+        req.session.kullaniciId = kullanici.id;
+        req.session.kullaniciAdi = kullanici.kullanici_adi;
+        res.redirect('/');
+    });
+});
+
+// Çıkış Yap
+app.post('/cikis', (req, res) => {
+    req.session.destroy(() => {
+        res.redirect('/giris');
+    });
+});
+
+// Giriş / Kayıt Sayfası
+app.get('/giris', (req, res) => {
+    res.send(`
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+        <meta charset="UTF-8">
+        <title>Giriş Yap</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 50px; }
+            .kutu { border: 1px solid #ccc; padding: 20px; max-width: 300px; margin-bottom: 20px; border-radius: 6px; }
+            input { display: block; margin-bottom: 10px; padding: 8px; width: 100%; box-sizing: border-box; }
+            button { padding: 8px 15px; cursor: pointer; }
+        </style>
+    </head>
+    <body>
+        <h1>Delf Teknoloji</h1>
+        <div class="kutu">
+            <h3>Giriş Yap</h3>
+            <form action="/giris-yap" method="POST">
+                <input type="text" name="kullanici_adi" placeholder="Kullanıcı adı" required>
+                <input type="password" name="sifre" placeholder="Şifre" required>
+                <button type="submit">Giriş Yap</button>
+            </form>
+        </div>
+        <div class="kutu">
+            <h3>Kayıt Ol</h3>
+            <form action="/kayit" method="POST">
+                <input type="text" name="kullanici_adi" placeholder="Kullanıcı adı" required>
+                <input type="password" name="sifre" placeholder="Şifre" required>
+                <button type="submit">Kayıt Ol</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    `);
+});
 // Sunucuyu Başlat
 app.listen(3000, () => {
     console.log("Sunucu çalışıyor: http://localhost:3000");
